@@ -28,7 +28,7 @@ export const login = asyncHandler(async (req, res) => {
     throw new ApiError(401, "Invalid username/email or password");
   }
 
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+    const token = jwt.sign({ _id: user._id }, process.env.JWT_SECRET, {
         expiresIn: "1h",
     })
 
@@ -73,5 +73,72 @@ export const register = asyncHandler(async(req,res)=>{
       username: user.username,
       email: user.email,
     }))
+
+})
+
+export const getUserHistory = asyncHandler(async(req,res)=>{
+    const userId = req.user?._id;
+
+    if(!userId)
+        throw new ApiError(401, "Unauthorized user");
+
+    const meetings = await Meeting.find({user_id: userId })
+    .sort({ createdAt: -1 });
+
+    return res.status(200).json(
+    new ApiResponse(200, "User history fetched successfully", meetings)
+  );
+
+})
+
+export const addToHistory = asyncHandler(async(req,res)=>{
+    
+  const userId = req.user?._id;
+  const { meeting_code } = req.body;
+
+  if (!userId) throw new ApiError(401, "Unauthorized");
+  if (!meeting_code) throw new ApiError(400, "Meeting code required");
+
+  const meeting = await Meeting.create({
+    user_id: userId,
+    meetingCode: meeting_code,
+    date: new Date(),
+  });
+
+
+  return res
+    .status(201)
+    .json(new ApiResponse(201, "Added code to history", meeting));
+})
+
+export const createRoom = asyncHandler(async(req,res)=>{
+    const userId = req.user?._id;
+    if(!userId) throw new ApiError(401, "User unauthorized");
+
+    const meetingCode = crypto.randomBytes(4).toString("hex");
+
+    const meeting = await Meeting.create({
+        user_id: userId,
+        meetingCode,
+        date: new Date(),
+    })
+
+    return res.status(201).json(new ApiResponse(201, {meetingCode: meeting.meetingCode}, "Room has been created"))
+})
+
+export const joinMeeting = asyncHandler(async(req,res)=>{
+    const userId = req.user?._id;
+    const {meetingCode} = req.body;
+
+     if(!userId) throw new ApiError(401, "User unauthorized");
+     if(!meetingCode) throw new ApiError(400, "Meeting code is required");
+
+     await Meeting.findOneAndUpdate(
+    { user_id: userId, meetingCode },
+    { $set: { date: new Date() } },
+    { upsert: true, new: true }
+  );
+
+  return res.status(200).json(new ApiResponse(200,{meetingCode}, "Joined meeting"))
 
 })
