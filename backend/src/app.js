@@ -25,7 +25,7 @@ app.use(express.static("public") ) //static files
 
 //cors configuration
 app.use(cors({
-    origin: process.env.CORS_ORIGIN?.split(",") || "https://localhost:5173/",
+    origin: process.env.CORS_ORIGIN?.split(",") || "http://localhost:5173",
     credentials: true,
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Authorization", "Content-Type"]

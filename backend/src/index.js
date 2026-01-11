@@ -8,6 +8,9 @@ dotenv.config({
     "path": "./.env"
 })
 
+
+
+
 const port = process.env.PORT
 const server = createServer(app);
 connectToSocket(server);

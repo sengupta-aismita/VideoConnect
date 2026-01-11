@@ -1,17 +1,28 @@
-import {Router} from "express"
-import { addToHistory, joinMeeting, login } from "../controllers/user.controller.js"
-import { register } from "../controllers/user.controller.js"
-import { getUserHistory } from "../controllers/user.controller.js"
-import { createRoom } from "../controllers/user.controller.js"
-import { verifyToken } from "../middlewares/auth.js"
+import { Router } from "express";
 
-const router = Router()
+import {
+  addToHistory,
+  joinMeeting,
+  login,
+  register,
+  getUserHistory,
+  createRoom,
+  googleAuth,
+} from "../controllers/user.controller.js";
 
-router.route("/login").post(login);
-router.route("/register").post(register);
-router.route("/history").get(verifyToken, getUserHistory);
-router.route("/history/add").post(verifyToken, addToHistory);
-router.route("/create-room").post(verifyToken, createRoom);
-router.route("/join-room").post(verifyToken, joinMeeting);
+import { verifyToken } from "../middlewares/auth.js";
 
-export default router
+const router = Router();
+
+router.post("/login", login);
+router.post("/register", register);
+
+router.get("/history", verifyToken, getUserHistory);
+router.post("/history/add", verifyToken, addToHistory);
+
+router.post("/create-room", verifyToken, createRoom);
+router.post("/join-room", verifyToken, joinMeeting);
+
+router.post("/google", googleAuth);
+
+export default router;

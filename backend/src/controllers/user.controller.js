@@ -6,6 +6,8 @@ import { Meeting } from "../models/meeting.model.js"
 import bcrypt, { hash } from "bcrypt"
 import jwt from "jsonwebtoken"
 import crypto from "crypto"
+import axios from "axios";
+
 
 export const login = asyncHandler(async (req, res) => {
     const { identifier, password } = req.body
@@ -33,15 +35,21 @@ export const login = asyncHandler(async (req, res) => {
     })
 
     return res.status(200).json(
-        new ApiResponse(200, "Login successful", {
-            token,
-            user: {
-                id: user._id,
-                username: user.username,
-                email: user.email,
-            },
-        })
-    )
+  new ApiResponse(
+    200,
+    {
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+      },
+    },
+    "Login successful"
+  )
+);
+
+
 })
 
 
@@ -68,11 +76,18 @@ export const register = asyncHandler(async(req,res)=>{
         isEmailVerified:false
     })
 
-    return res.status(201).json(new ApiResponse(201, "User registered successfully", {
+    return res.status(201).json(
+  new ApiResponse(
+    201,
+    {
       id: user._id,
       username: user.username,
       email: user.email,
-    }))
+    },
+    "User registered successfully"
+  )
+);
+
 
 })
 
@@ -142,3 +157,61 @@ export const joinMeeting = asyncHandler(async(req,res)=>{
   return res.status(200).json(new ApiResponse(200,{meetingCode}, "Joined meeting"))
 
 })
+
+export const googleAuth = asyncHandler(async (req, res) => {
+  const auth0Token = req.headers.authorization?.split(" ")[1];
+
+  if (!auth0Token) {
+    throw new ApiError(401, "Auth0 token missing");
+  }
+
+  // ✅ Get user profile from Auth0
+  const userInfoRes = await axios.get(
+    `https://${process.env.AUTH0_DOMAIN}/userinfo`,
+    {
+      headers: {
+        Authorization: `Bearer ${auth0Token}`,
+      },
+    }
+  );
+
+  const { email, name, nickname } = userInfoRes.data;
+
+  if (!email) {
+    throw new ApiError(400, "Auth0 did not return email");
+  }
+
+  // ✅ Find user in Mongo
+  let user = await User.findOne({ email });
+
+  // ✅ Create user if not exists
+  if (!user) {
+    user = await User.create({
+      email,
+      username: nickname || email.split("@")[0],
+      fullName: name || nickname || "Google User",
+      password: "GOOGLE_AUTH_USER",
+      isEmailVerified: true,
+    });
+  }
+
+  // ✅ Issue YOUR JWT using Mongo user._id
+  const token = jwt.sign({ _id: user._id }, process.env.JWT_SECRET, {
+    expiresIn: "1h",
+  });
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        token,
+        user: {
+          id: user._id,
+          username: user.username,
+          email: user.email,
+        },
+      },
+      "Google login successful"
+    )
+  );
+});
