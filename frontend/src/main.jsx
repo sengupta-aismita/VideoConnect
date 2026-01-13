@@ -11,7 +11,7 @@ const audience = import.meta.env.VITE_AUTH0_AUDIENCE;
 
 
 createRoot(document.getElementById('root')).render(
-  <StrictMode>
+  
     <Auth0Provider
       domain={domain}
       clientId={clientId}
@@ -22,5 +22,5 @@ createRoot(document.getElementById('root')).render(
     >
     <App />
     </Auth0Provider>
-  </StrictMode>,
+  
 )

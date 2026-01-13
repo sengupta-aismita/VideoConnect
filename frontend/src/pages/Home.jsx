@@ -5,8 +5,7 @@ import { useEffect, useState } from "react";
 import Notice from "../components/Notice";
 
 export default function Home() {
-  console.log("TOKEN:", localStorage.getItem("token"));
-console.log("USER:", localStorage.getItem("user"));
+ 
 
   const { user, logout, isAuthenticated } = useAuth0();
   const navigate = useNavigate();
@@ -31,17 +30,22 @@ console.log("USER:", localStorage.getItem("user"));
     
 
     if (savedUser) {
-      setDisplayUser(savedUser?.username || savedUser?.email || "");
+       const niceName =
+    savedUser?.fullName ||
+    savedUser?.username ||
+    (savedUser?.email ? savedUser.email.split("@")[0] : "Guest");
+      setDisplayUser(niceName);
     }
   }, [isAuthenticated, user]);
 
   useEffect(() => {
-  console.log("HOME TOKEN:", localStorage.getItem("token"));
+  console.log("HOME TOKEN:", localStorage.getItem("accessToken"));
   console.log("HOME USER:", localStorage.getItem("user"));
 }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken"); 
     localStorage.removeItem("user");
 
     if (isAuthenticated) {
@@ -56,7 +60,7 @@ console.log("USER:", localStorage.getItem("user"));
 
   const handleStartMeeting = async () => {
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("accessToken");
 
       const res = await fetch("http://localhost:8080/api/v1/auth/create-room", {
         method: "POST",
@@ -90,7 +94,7 @@ console.log("USER:", localStorage.getItem("user"));
       return;
     }
 
-    const token = localStorage.getItem("token");
+    const token = localStorage.getItem("accessToken");
 
     const res = await fetch("http://localhost:8080/api/v1/auth/join-room", {
       method: "POST",

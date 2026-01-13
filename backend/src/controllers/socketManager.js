@@ -1,12 +1,12 @@
 import { Server } from "socket.io";
 
-let connections = {};  // roomId -> [socketIds]
+let connections = {};  // roomId -> [{ id, name }]
 let timeOnline = {};   // socketId -> Date()
 
 export const connectToSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: "*", // dev
+      origin: "*",
       methods: ["GET", "POST"],
       allowedHeaders: ["*"],
       credentials: true,
@@ -16,21 +16,29 @@ export const connectToSocket = (server) => {
   io.on("connection", (socket) => {
     console.log("Socket connected:", socket.id);
 
-    socket.on("join-call", (roomId) => {
-      if (!connections[roomId]) connections[roomId] = [];
+    // ✅ join call with username
+   socket.on("join-call", ({ roomId, name }) => {
+  if (!roomId) return;
 
-      connections[roomId].push(socket.id);
-      timeOnline[socket.id] = new Date();
+  socket.join(roomId); // ✅ IMPORTANT
 
-      // notify everyone in room about new user
-      connections[roomId].forEach((id) => {
-        io.to(id).emit("user-joined", socket.id, connections[roomId]);
-      });
+  if (!connections[roomId]) connections[roomId] = [];
 
-      console.log(`📌 ${socket.id} joined room ${roomId}`);
-    });
+  const already = connections[roomId].some((p) => p.id === socket.id);
+  if (!already) {
+    connections[roomId].push({ id: socket.id, name: name || "Guest" });
+  }
 
-    //  (offer/answer/ice all come here)
+  timeOnline[socket.id] = new Date();
+
+  // ✅ emit only to THIS ROOM
+  io.to(roomId).emit("user-joined", socket.id, connections[roomId]);
+
+  console.log(`📌 ${socket.id} joined room ${roomId}`);
+});
+
+
+    // (offer/answer/ice all come here)
     socket.on("signal", (toId, message) => {
       io.to(toId).emit("signal", socket.id, message);
     });
@@ -39,14 +47,14 @@ export const connectToSocket = (server) => {
       console.log("Socket disconnected:", socket.id);
 
       for (const roomId in connections) {
-        const index = connections[roomId].indexOf(socket.id);
+        const index = connections[roomId].findIndex((p) => p.id === socket.id);
 
         if (index !== -1) {
           // notify room members that user left
-          connections[roomId].forEach((id) => {
-            io.to(id).emit("user-left", socket.id);
-          });
+           io.to(roomId).emit("user-left", socket.id);
 
+
+          
           connections[roomId].splice(index, 1);
 
           if (connections[roomId].length === 0) delete connections[roomId];

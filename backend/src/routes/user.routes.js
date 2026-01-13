@@ -8,6 +8,7 @@ import {
   getUserHistory,
   createRoom,
   googleAuth,
+  refreshAccessToken,
 } from "../controllers/user.controller.js";
 
 import { verifyToken } from "../middlewares/auth.js";
@@ -22,7 +23,7 @@ router.post("/history/add", verifyToken, addToHistory);
 
 router.post("/create-room", verifyToken, createRoom);
 router.post("/join-room", verifyToken, joinMeeting);
-
+router.post("/refresh-token", refreshAccessToken);
 router.post("/google", googleAuth);
 
 export default router;

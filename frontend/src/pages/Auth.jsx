@@ -34,7 +34,6 @@ export default function Auth() {
 
   const handleAuth = async () => {
     try {
-      // ✅ frontend validations (no empty backend calls)
       if (mode === "login") {
         if (!form.identifier.trim() || !form.password.trim()) {
           showNotice("error", "Please enter username/email and password");
@@ -97,17 +96,19 @@ export default function Auth() {
         //   message: { token, user },
         //   success: true
         // }
-        const token = data?.message?.token || data?.data?.token;
+        const accessToken = data?.data?.accessToken;
+const refreshToken = data?.data?.refreshToken;
         const userObj = data?.message?.user || data?.data?.user;
 
-        if (!token) {
-          showNotice("error", "No token returned from backend");
+        if (!accessToken || !refreshToken) {
+          showNotice("error", "Tokens not returned from backend");
           return;
         }
 
-        localStorage.setItem("token", token);
+        localStorage.setItem("accessToken", accessToken);
+localStorage.setItem("refreshToken", refreshToken);
 
-        // ✅ store user so Home doesn’t show Guest
+        
         if (userObj) {
           localStorage.setItem("user", JSON.stringify(userObj));
         }
@@ -118,11 +119,24 @@ export default function Auth() {
       }
 
       // ✅ SIGNUP success
-      showNotice("success", "Account created ✅ Now login!", 1200);
-      setTimeout(() => {
-        setMode("login");
-        setNotice({ type: "", msg: "" });
-      }, 1200);
+      // ✅ SIGNUP success -> auto login
+const accessToken = data?.data?.accessToken;
+const refreshToken = data?.data?.refreshToken;
+const userObj = data?.data?.user;
+
+if (!accessToken || !refreshToken) {
+  showNotice("error", "Tokens not returned from backend");
+  return;
+}
+
+localStorage.setItem("accessToken", accessToken);
+localStorage.setItem("refreshToken", refreshToken);
+if (userObj) localStorage.setItem("user", JSON.stringify(userObj));
+
+showNotice("success", "Signup successful ✅ Redirecting...", 1200);
+setTimeout(() => navigate("/home"), 600);
+return;
+
     } catch (err) {
       console.error(err);
       showNotice("error", "Something went wrong");
@@ -146,7 +160,7 @@ export default function Auth() {
       try {
         if (!isAuthenticated) return;
 
-        const alreadyHasToken = localStorage.getItem("token");
+        const alreadyHasToken = localStorage.getItem("accessToken");
         if (alreadyHasToken) {
           navigate("/home");
           return;
@@ -163,14 +177,15 @@ export default function Auth() {
         });
 
         const data = await res.json();
-
-        const token = data?.token || data?.data?.token || data?.message?.token;
+const accessToken = data?.data?.accessToken;
+const refreshToken = data?.data?.refreshToken;
         const userObj = data?.user || data?.data?.user || data?.message?.user;
 
-        if (token) {
-          localStorage.setItem("token", token);
-          if (userObj) localStorage.setItem("user", JSON.stringify(userObj));
-          navigate("/home");
+        if (accessToken && refreshToken) {
+  localStorage.setItem("accessToken", accessToken);
+  localStorage.setItem("refreshToken", refreshToken);
+  if (userObj) localStorage.setItem("user", JSON.stringify(userObj));
+  navigate("/home");
         } else {
           console.log("Auth backend failed:", data);
           showNotice("error", "Google login failed");

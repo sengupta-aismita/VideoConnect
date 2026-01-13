@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Video, Copy, Link2, ArrowLeft } from "lucide-react";
-import Notice from "../components/Notice";
+import MeetingPreview from "../components/MeetingPreview";
+import MeetingStage from "../components/MeetingStage";
+import socket from "../socket";
+import useWebRTC from "../hooks/useWebRTC";
 
 export default function Room() {
   const { roomId } = useParams();
@@ -11,14 +13,45 @@ export default function Room() {
   const isPreview = searchParams.get("preview") === "1";
 
   const [notice, setNotice] = useState({ type: "", msg: "" });
-  const [joined, setJoined] = useState(!isPreview); // ✅ if not preview, already joined
+  const [joined, setJoined] = useState(!isPreview);
+  const [micOn, setMicOn] = useState(() => {
+    const saved = localStorage.getItem("vc_micOn");
+    return saved !== null ? JSON.parse(saved) : false; // ✅ default false
+  });
+
+  const [camOn, setCamOn] = useState(() => {
+    const saved = localStorage.getItem("vc_camOn");
+    return saved !== null ? JSON.parse(saved) : false; // ✅ default false
+  });
+
+  const [sharing, setSharing] = useState(false);
+  const [remoteUsers, setRemoteUsers] = useState([]);
+
+  const savedUser = JSON.parse(localStorage.getItem("user"));
+  const myName =
+    savedUser?.fullName || savedUser?.username || savedUser?.email || "You";
+
+  const { localStreamRef, remoteStreams, callUser, removeUser } = useWebRTC({
+    joined,
+
+    micOn,
+    camOn,
+  });
+
+  useEffect(() => {
+    localStorage.setItem("vc_micOn", JSON.stringify(micOn));
+  }, [micOn]);
+
+  useEffect(() => {
+    localStorage.setItem("vc_camOn", JSON.stringify(camOn));
+  }, [camOn]);
 
   const showNotice = (type, msg, time = 2500) => {
     setNotice({ type, msg });
     setTimeout(() => setNotice({ type: "", msg: "" }), time);
   };
 
-  // ✅ Auto copy invite link ONLY when meeting is started (not preview)
+  // ✅ auto copy invite link after join
   useEffect(() => {
     if (!roomId) return;
     if (!joined) return;
@@ -27,7 +60,64 @@ export default function Room() {
     navigator.clipboard.writeText(link).then(() => {
       showNotice("success", "Invite link copied ✅", 1600);
     });
+    // eslint-disable-next-line
   }, [roomId, joined]);
+
+  // ✅ join socket room + sync participants
+  useEffect(() => {
+  if (!roomId) return;
+  if (!joined) return;
+
+  socket.emit("join-call", { roomId, name: myName });
+
+  const onUserJoined = (joinedId, list) => {
+    const others = list
+      .filter((p) => p.id !== socket.id)
+      .map((p) => ({ id: p.id, name: p.name }));
+
+    setRemoteUsers(others);
+
+    if (joinedId === socket.id) {
+      // I joined: call everyone already in room
+      others.forEach((u) => {
+        const tryCall = () => {
+          if (localStreamRef?.current) callUser(u.id);
+          else setTimeout(tryCall, 250);
+        };
+        tryCall();
+      });
+      return;
+    }
+
+    if (joinedId && joinedId !== socket.id) {
+      // someone else joined after me: call them
+      const tryCall = () => {
+        if (localStreamRef?.current) callUser(joinedId);
+        else setTimeout(tryCall, 250);
+      };
+      tryCall();
+    }
+  };
+
+  const onUserLeft = (leftId) => {
+    setRemoteUsers((prev) => prev.filter((u) => u.id !== leftId));
+    removeUser(leftId);
+  };
+
+  socket.on("user-joined", onUserJoined);
+  socket.on("user-left", onUserLeft);
+
+  return () => {
+    socket.off("user-joined", onUserJoined);
+    socket.off("user-left", onUserLeft);
+  };
+}, [roomId, joined, myName, callUser, removeUser, localStreamRef]);
+
+  // ✅ participants (only once!)
+  const participants = [
+    { id: socket.id || "me", name: myName, isMe: true },
+    ...remoteUsers.map((u) => ({ ...u, isMe: false })),
+  ];
 
   const copyCode = async () => {
     try {
@@ -48,205 +138,86 @@ export default function Room() {
     }
   };
 
+  const handleScreenShare = async () => {
+    try {
+      if (!sharing) {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false,
+        });
+
+        setSharing(true);
+        showNotice("success", "Screen sharing started", 1200);
+
+        stream.getVideoTracks()[0].onended = () => {
+          setSharing(false);
+          showNotice("success", "Screen sharing stopped", 1200);
+        };
+      } else {
+        setSharing(false);
+        showNotice("success", "Screen sharing stopped", 1200);
+      }
+    } catch (err) {
+      console.log(err);
+      showNotice("error", "Screen share denied", 1500);
+    }
+  };
+
+  const getGridClass = (count) => {
+    if (count <= 1) return "grid-cols-1";
+    if (count === 2) return "grid-cols-1 md:grid-cols-2";
+    if (count <= 4) return "grid-cols-2";
+    if (count <= 6) return "grid-cols-2 md:grid-cols-3";
+    return "grid-cols-2 md:grid-cols-4";
+  };
+
   // ✅ Preview Page UI
   if (isPreview && !joined) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-zinc-950 to-zinc-900 text-white">
-        {/* Navbar */}
-        <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center border border-white/10">
-              <Video className="h-5 w-5 text-white" />
-            </div>
-            <span className="text-lg font-semibold tracking-wide">
-              VideoConnect
-            </span>
-          </div>
-
-          <button
-            onClick={() => navigate("/home")}
-            className="rounded-xl px-4 py-2 text-sm font-semibold bg-white/10 hover:bg-white/15 transition flex items-center gap-2 cursor-pointer"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </button>
-        </header>
-
-        <main className="mx-auto max-w-6xl px-6 pb-16">
-          {/* Notice */}
-          <Notice
-            notice={notice}
-            onClose={() => setNotice({ type: "", msg: "" })}
-          />
-
-          <div className="mx-auto max-w-4xl mt-10 rounded-2xl border border-white/10 bg-white/5 p-7 shadow-xl">
-            <p className="text-sm text-zinc-400">Meeting Preview</p>
-
-            <h2 className="mt-2 text-2xl font-bold">
-              You are about to join meeting
-            </h2>
-
-            <div className="mt-6 rounded-xl border border-white/10 bg-black/40 p-5 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-zinc-400">Meeting Code</p>
-                <p className="mt-1 text-2xl font-bold tracking-widest">
-                  {roomId}
-                </p>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={copyCode}
-                  className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold bg-white/10 hover:bg-white/15 transition cursor-pointer"
-                >
-                  <Copy className="h-4 w-4" />
-                  Copy Code
-                </button>
-
-                <button
-                  onClick={copyLink}
-                  className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 transition cursor-pointer"
-                >
-                  <Link2 className="h-4 w-4" />
-                  Copy Link
-                </button>
-              </div>
-            </div>
-
-            {/* Preview placeholders */}
-            <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="aspect-video rounded-2xl border border-white/10 bg-black/40 flex items-center justify-center text-zinc-500">
-                Camera preview (coming)
-              </div>
-
-              <div className="aspect-video rounded-2xl border border-white/10 bg-black/40 flex items-center justify-center text-zinc-500">
-                Participant preview
-              </div>
-            </div>
-
-            {/* Buttons */}
-            <div className="mt-8 flex gap-3">
-              <button
-                onClick={() => navigate("/home")}
-                className="w-full rounded-xl py-3 bg-white/10 hover:bg-white/15 transition font-semibold"
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={() => {
-                  showNotice("success", "Joining meeting ✅", 1200);
-                  setTimeout(() => {
-                    setJoined(true);
-                    navigate(`/room/${roomId}`); // ✅ remove preview param
-                  }, 500);
-                }}
-                className="w-full rounded-xl py-3 bg-blue-600 hover:bg-blue-700 transition font-semibold"
-              >
-                Join Meeting
-              </button>
-            </div>
-          </div>
-        </main>
-      </div>
+      <MeetingPreview
+        roomId={roomId}
+        notice={notice}
+        setNotice={setNotice}
+        navigate={navigate}
+        micOn={micOn}
+        camOn={camOn}
+        sharing={sharing}
+        onToggleMic={() => setMicOn((p) => !p)}
+        onToggleCam={() => setCamOn((p) => !p)}
+        onShareScreen={handleScreenShare}
+        copyCode={copyCode}
+        copyLink={copyLink}
+        onJoin={() => {
+          showNotice("success", "Joining meeting ✅", 1200);
+          setTimeout(() => {
+            setJoined(true);
+            navigate(`/room/${roomId}`);
+          }, 500);
+        }}
+      />
     );
   }
 
   // ✅ Actual Meeting UI
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-zinc-950 to-zinc-900 text-white">
-      {/* Navbar */}
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-        <div className="flex items-center gap-2">
-          <div className="h-9 w-9 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center border border-white/10">
-            <Video className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-lg font-semibold tracking-wide">
-            VideoConnect
-          </span>
-        </div>
-
-        <button
-          onClick={() => navigate("/home")}
-          className="rounded-xl px-4 py-2 text-sm font-semibold bg-white/10 hover:bg-white/15 transition flex items-center gap-2 cursor-pointer"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
-      </header>
-
-      {/* Content */}
-      <main className="mx-auto max-w-6xl px-6 pb-16">
-        {/* Notice */}
-        <Notice
-          notice={notice}
-          onClose={() => setNotice({ type: "", msg: "" })}
-        />
-
-        {/* Invite Panel */}
-        <div className="mx-auto max-w-4xl mt-2 mb-8 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-md shadow-lg">
-          <p className="text-sm text-zinc-400">Invite someone to join</p>
-
-          <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            {/* Code display */}
-            <div>
-              <p className="text-xs text-zinc-400">Meeting Code</p>
-              <p className="mt-1 text-2xl font-bold tracking-widest text-white">
-                {roomId}
-              </p>
-            </div>
-
-            {/* Buttons */}
-            <div className="flex gap-3">
-              <button
-                onClick={copyCode}
-                className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold bg-white/10 hover:bg-white/15 transition cursor-pointer"
-              >
-                <Copy className="h-4 w-4" />
-                Copy Code
-              </button>
-
-              <button
-                onClick={copyLink}
-                className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 transition cursor-pointer"
-              >
-                <Link2 className="h-4 w-4" />
-                Copy Link
-              </button>
-            </div>
-          </div>
-
-          <p className="mt-3 text-xs text-zinc-500">
-            Share the code or link with your friend — they can paste it in{" "}
-            <b>Join with Code</b>.
-          </p>
-        </div>
-
-        {/* Video Placeholder UI */}
-        <div className="mx-auto max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="aspect-video rounded-2xl border border-white/10 bg-black/40 flex items-center justify-center text-zinc-400">
-            Your video will appear here
-          </div>
-
-          <div className="aspect-video rounded-2xl border border-white/10 bg-black/40 flex items-center justify-center text-zinc-400">
-            Participant video will appear here
-          </div>
-        </div>
-
-        {/* Controls placeholder */}
-        <div className="mx-auto max-w-3xl mt-10 rounded-2xl border border-white/10 bg-white/5 p-5 flex items-center justify-between">
-          <p className="text-sm text-zinc-300">
-            Meeting running... (controls coming next)
-          </p>
-
-          <button
-            onClick={() => navigate("/home")}
-            className="rounded-xl bg-red-500 px-5 py-2 text-sm font-semibold hover:bg-red-600 transition cursor-pointer"
-          >
-            Leave Meeting
-          </button>
-        </div>
-      </main>
-    </div>
+    <MeetingStage
+      roomId={roomId}
+      notice={notice}
+      setNotice={setNotice}
+      navigate={navigate}
+      participants={participants}
+      getGridClass={getGridClass}
+      micOn={micOn}
+      camOn={camOn}
+      sharing={sharing}
+      onToggleMic={() => setMicOn((p) => !p)}
+      onToggleCam={() => setCamOn((p) => !p)}
+      onShareScreen={handleScreenShare}
+      onLeave={() => navigate("/home")}
+      copyCode={copyCode}
+      copyLink={copyLink}
+      localStreamRef={localStreamRef}
+      remoteStreams={remoteStreams}
+    />
   );
 }

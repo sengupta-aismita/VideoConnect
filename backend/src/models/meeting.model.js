@@ -12,14 +12,16 @@ const meetingSchema = new mongoose.Schema({
         type:String,
         required:true,
         trim:true,
-        unique:true
+        
     },
     date:{
         type:Date,
-        default: Date.now(),
+        default: Date.now,
         required: true
 
     }
 },{timestamps: true})
+
+meetingSchema.index({ user_id: 1, meetingCode: 1 }, { unique: true });
 
 export const Meeting = mongoose.model("Meeting",meetingSchema )
